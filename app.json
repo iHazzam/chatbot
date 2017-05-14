@@ -1,0 +1,61 @@
+{
+  "name": "BotMan",
+  "description": "A template for getting started with BotMan and Laravel.",
+  "repository": "https://github.com/mpociot/botman-laravel-starter",
+  "keywords": ["chatbot", "php", "botman", "laravel", "slack", "facebook", "wechat", "nexmo", "skype", "telegram"],
+  "logo": "https://botman.io/img/botman.png",
+  "website": "https://botman.io",
+  "success_url": "/welcome",
+  "env": {
+    "FACEBOOK_TOKEN": {
+      "description": "Your Facebook page token.",
+      "value": "",
+      "required": false
+    },
+    "SLACK_TOKEN": {
+      "description": "Your Slack bot/app token.",
+      "value": "",
+      "required": false
+    },
+    "HIPCHAT_URL": {
+      "description": "Your HipChat webhook URLs.",
+      "value": "",
+      "required": false
+    },
+    "MICROSOFT_APP_ID": {
+      "description": "Your Microsoft bot app ID.",
+      "value": "",
+      "required": false
+    },
+    "MICROSOFT_APP_KEY": {
+      "description": "Your Microsoft bot app key.",
+      "value": "",
+      "required": false
+    },
+    "MICROSOFT_BOT_HANDLE": {
+      "description": "Your Microsoft bot handle (only used for web bots)",
+      "value": "",
+      "required": false
+    },
+    "NEXMO_KEY": {
+      "description": "Your Nexmo app key.",
+      "value": "",
+      "required": false
+    },
+    "NEXMO_SECRET": {
+      "description": "Your Nexmo app secret.",
+      "value": "",
+      "required": false
+    },
+    "TELEGRAM_TOKEN": {
+      "description": " Your Telegram bot token.",
+      "value": "",
+      "required": false
+    },
+    "TOKEN_VERIFY": {
+      "description": "Your Facebook/WeChat verification key.",
+      "value": "",
+      "required": false
+    }
+  }
+}
