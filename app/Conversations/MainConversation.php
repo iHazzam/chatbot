@@ -47,7 +47,6 @@ class MainConversation extends Conversation
                 //$answer->getValue()
                 if($answer->getValue() === 'last')
                 {
-                    $this->say('This is a summary of your last placed order!');
                     $this->returnSummary();
                 }
                 elseif($answer->getValue() ==='new')
@@ -85,20 +84,23 @@ class MainConversation extends Conversation
     }
     public function returnSummary()
     {
+        $this->say('This is a summary of your last placed order!');
         $client = new Client();
         try{
-           $last = json_decode($client->get('https://playdale.me/api/last/'.$this->uid)->getBody()->getContents());
-           $lastorder = json_decode($client->get('https://playdale.me/api/last/order/'.$this->uid)->getBody()->getContents());
+            $last = json_decode($client->get('https://playdale.me/api/last/order/'.$this->uid)->getBody()->getContents());
+            $lastorder = json_decode($client->get('https://playdale.me/api/last/order/'.$this->uid . '/' . $last->id)->getBody()->getContents());
             $rt = ReceiptTemplate::create()
                 ->recipientName($last->contact_name)
                 ->merchantName('Playdale')
                 ->orderNumber($last->id)
                 ->orderUrl('http://playdale.me/admin/orders')
-                ->currency($last->currency)
+                ->currency(strtoupper($last->currency))
+                ->paymentMethod('UNPAID')
                 ->addAddress(ReceiptAddress::create()
                     ->street1($last->address_line1)
                     ->street2($last->address_line2)
                     ->city($last->city)
+                    ->state($last->city)
                     ->postalCode($last->postcode)
                     ->country($last->country)
                 )
@@ -110,12 +112,13 @@ class MainConversation extends Conversation
             foreach ($lastorder as $item)
             {
                 $imageurl = $this->getImageUrl($item->product_code);
-                $rt->addElement(ReceiptElement::create($item->product_code)->quantity($item->quantity)->price($item->price)->image($imageurl));
+                $imageurl2 = str_replace('http','https',$imageurl);
+                $imageurl3 = str_replace('.app','.me',$imageurl2);
+                $imageurl4 = str_replace('chatbot','playdale',$imageurl3);
+                $rt->addElement(ReceiptElement::create($item->product_code)->quantity($item->quantity)->price($item->price)->image($imageurl4));
             }
-            $this->bot->reply(
-                $rt
-            );
-            $this->say('It was fun talking! Bye!');
+            $this->bot->reply($rt);
+
         }
         catch(ErrorException $e)
         {
@@ -173,31 +176,33 @@ class MainConversation extends Conversation
                                     $op = new OrderProduct();
                                     $user = $this->bot->userStorage()->get();
                                     $prod = $user->get('product');
-                                    Log::emergency($this->order);
-                                    Log::emergency($prod);
                                     $op->order_id = $this->order->id;
-                                    Log::emergency("179");
                                     $op->product_code = $prod['code'];
-                                    Log::emergency("181");
                                     $op->quantity = intval($response->getText());
-                                    Log::emergency("183");
                                     $op->price = $prod['price'] * $prod['discountmod'];
                                     $op->currency = "gbp";
                                     $op->save();
+                                    $this->bot->userStorage()->save([
+                                        'opx' => $op
+                                    ]);
                                     $this->ask('Do you want to add more products to your order? Say YES or NO', [
                                         [
                                             'pattern' => 'yes|yep|sure|ok|alright',
-                                            'callback' => function ($op) {
+                                            'callback' => function () {
                                                 $this->say('Okay - we\'ll keep going');
-                                                array_push($this->ops,$op);
+                                                $user = $this->bot->userStorage()->get();
+                                                $opx = $user->get('opx');
+                                                array_push($this->ops,$opx);
                                                 $this->askForProduct();
                                             }
                                         ],
                                         [
                                             'pattern' => 'nah|no|nope',
-                                            'callback' => function ($op) {
+                                            'callback' => function () {
                                                 $this->say('OK! Moving on...');
-                                                array_push($this->ops,$op);
+                                                $user = $this->bot->userStorage()->get();
+                                                $opx = $user->get('opx');
+                                                array_push($this->ops,$opx);
                                                 $this->anyCustom();
                                             }
                                         ]
@@ -298,18 +303,29 @@ class MainConversation extends Conversation
     {
         $this->say('Now, let\'s check your delivery address is up to date. I think it is:');
         $c = new Client();
-        $addr = json_decode($c->get('https://playdale.me/api/address/'.$this->uid)->getBody()->getContents());//TODO:Write this method on API
+        $addr = json_decode($c->get('https://playdale.me/api/auth/'.$this->uid.'/address')->getBody()->getContents());//TODO:Write this method on API
         $this->say('We currently have your address listed as');
-        $this->say($addr['line1']);
-        $this->say($addr['line2']);
-        $this->say($addr['city']);
-        $this->say($addr['postcode']);
-        $this->say($addr['country']);
+        $this->say($addr->address_line1);
+        $this->say($addr->address_line2);
+        $this->say($addr->city);
+        $this->say($addr->postcode);
+        $this->say($addr->country);
+        $this->bot->userStorage()->save([
+            'addr' => $addr
+        ]);
         $this->ask('Was this delivery address correct?', [
             [
                 'pattern' => 'yes|yep|sure|ok|alright',
-                'callback' => function ($addr) {
+                'callback' => function () {
+                    $user = $this->bot->userStorage()->get();
+                    $addr = $user->get('addr');
                     $this->say('Okay - we\'ll keep going');
+                    $this->order->address_line1 = $addr['address_line1'];
+                    $this->order->address_line2 = $addr['address_line2'];
+                    $this->order->city = $addr['city'];
+                    $this->order->postcode = $addr['postcode'];
+                    $this->order->country = $addr['country'];
+                    $this->askAnyLastDetails();
                 }
             ],
             [
@@ -317,11 +333,11 @@ class MainConversation extends Conversation
                 'callback' => function () {
                     $address = [];
                     $this->ask('Please enter the first line of your new delivery address', function (Answer $response) {
-                        $address['line1'] = $response;
+                        $address['address_line1'] = $response;
                         $this->ask('Please enter the second line of your new delivery address. If you don\'t have one, please say no!', function (Answer $response) {
                             if($response == ("no"|"nah"|"nope"))
                             {
-                                $address['line2'] = null;
+                                $address['address_line2'] = null;
                             }
                             else{
                                 $address['line2'] = $response;
@@ -332,7 +348,13 @@ class MainConversation extends Conversation
                                     $address['postcode'] = $response;
                                     $this->ask('Please enter the country of your new delivery address', function (Answer $response) {
                                         $address['country'] = $response;
+                                        $this->order->address_line1 = $address['address_line1'];
+                                        $this->order->address_line2 = $address['address_line2'];
+                                        $this->order->city = $address['city'];
+                                        $this->order->postcode = $address['postcode'];
+                                        $this->order->country = $address['country'];
                                         $this->say('Thanks!');
+                                        $this->askAnyLastDetails();
                                     });
                                 });
                             });
@@ -341,16 +363,11 @@ class MainConversation extends Conversation
                 }
             ]
         ]);
-        $this->order->address_line1 = $addr['line1'];
-        $this->order->address_line2 = $addr['line2'];
-        $this->order->city = $addr['city'];
-        $this->order->postcode = $addr['postcode'];
-        $this->order->country = $addr['country'];
-        $this->askAnyLastDetails();
+
     }
     public function askAnyLastDetails()
     {
-        $this->ask('Are there any custom details or incoterms you want to add to the order?', function (Answer $response) {
+        $this->ask('Please now type any custom messages, details or incoterms you\'d like to add to the order (or, just say no!)', function (Answer $response) {
             $this->order->incoterms = $response->getText();
             $this->showFinalInvoice();
             //confirm
@@ -364,11 +381,13 @@ class MainConversation extends Conversation
                 ->merchantName('Playdale')
                 ->orderNumber("ORDER PENDING")
                 ->orderUrl('http://playdale.app/admin/orders')
-                ->currency($this->order->currency)
+                ->currency('GBP')
+                ->paymentMethod('BACS TBC')
                 ->addAddress(ReceiptAddress::create()
                     ->street1($this->order->address_line1)
                     ->street2($this->order->address_line2)
                     ->city($this->order->city)
+                    ->state($this->order->city)
                     ->postalCode($this->order->postcode)
                     ->country($this->order->country)
                 )
@@ -379,8 +398,8 @@ class MainConversation extends Conversation
                 );
             foreach ($this->ops as $item)
             {
-                $imageurl = $this->getImageUrl($item->product_code);
-                $rt->addElement(ReceiptElement::create($item->product_code)->quantity($item->quantity)->price($item->price)->image($imageurl));
+                $imageurl = $this->getImageUrl($item['product_code']);
+                $rt->addElement(ReceiptElement::create($item['product_code'])->quantity($item['quantity'])->price($item['price'])->image($imageurl));
             }
             $this->bot->reply(
                 $rt
@@ -407,7 +426,22 @@ class MainConversation extends Conversation
     public function confirm()
     {
         //you don't actually save the order, dumbass
-        $this->say('Thanks for using my powers! Please come back soon! Bye!');
+        $this->ask('The time is now - Would you like to place the order? (say YES or NO)', [
+            [
+                'pattern' => 'yes|yep|sure|ok|alright',
+                'callback' => function () {
+
+                    $this->say('Order placed, you\'ll get an email shortly. Thanks for using my powers! Please come back soon! Bye!');
+                }
+            ],
+            [
+                'pattern' => 'nah|no|nope',
+                'callback' => function () {
+
+                    $this->say('Oh well. Never mind! Thanks for using my powers! Please come back soon! Bye!');
+                }
+            ]
+        ]);
     }
     /**
      * Start the conversation
